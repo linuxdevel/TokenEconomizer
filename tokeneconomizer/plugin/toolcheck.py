@@ -207,13 +207,85 @@ def refresh_catalog(state_root, cli=None, host="claude"):
         return path, sorted(tools)
     if host != "claude":
         raise RuntimeError(f"no catalog probe for {host}")
+    fp = cli_fingerprint(cli)
     tools, version = _init_tools([], cli=cli)
     if not tools:
         raise RuntimeError("could not read the tool list from a `claude -p` init event")
     path = live_adapter.catalog_path(state_root, "claude")
     _write_json(path, {"tools": sorted(tools), "claude_code_version": version,
-                       "probed_at": time.time()})
+                       "cli_fingerprint": fp, "probed_at": time.time()})
     return path, sorted(tools)
+
+
+# The automatic refresh at session start (`maybe_refresh_catalog`): a recorded catalog older than
+# this is probed again, since adding or removing an MCP server changes the tool list without
+# changing Claude Code; and a probe for the same `claude` is not retried sooner than this, so a
+# probe that keeps failing (no network, a read-only state root) does not start with every session.
+CATALOG_MAX_AGE = 24 * 3600
+CATALOG_RETRY = 3600
+
+
+def cli_fingerprint(cli=None):
+    """Which `claude` this machine starts, from `stat` alone: the resolved file (the native
+    installer's `versions/<x.y.z>`, npm's `cli.js`) with its mtime and size, so an update changes
+    it. Cheap enough for a hook; None when no `claude` is found."""
+    cli = cli or claude_cli()
+    try:
+        real = os.path.realpath(cli)
+        st = os.stat(real)
+    except OSError:
+        return None
+    return f"{real}:{st.st_mtime_ns}:{st.st_size}"
+
+
+def _refresh_state_path(state_root, host):
+    return os.path.join(state_root, "hosts", host, "catalog-refresh.json")
+
+
+def _read(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def catalog_stale(state_root, host="claude", fingerprint=None, now=None):
+    """Why the recorded catalog should be probed again ("missing", "updated", "old"), or None."""
+    now = time.time() if now is None else now
+    cat = _read(live_adapter.catalog_path(state_root, host))
+    if not cat.get("tools"):
+        return "missing"
+    if fingerprint and cat.get("cli_fingerprint") != fingerprint:
+        return "updated"
+    if now - float(cat.get("probed_at") or 0) > CATALOG_MAX_AGE:
+        return "old"
+    return None
+
+
+def maybe_refresh_catalog(ctx, now=None):
+    """At a Claude Code session start: when the catalog is missing, older than CATALOG_MAX_AGE, or
+    recorded for another `claude` than the one installed now, start `te toolprune
+    refresh-catalog` detached. The hook only stats a file and writes the attempt down (which
+    keeps concurrent session starts to one probe); the probe itself never runs in it. Returns
+    the reason a refresh was started, or None."""
+    if ctx.host.name != "claude":
+        return None
+    now = time.time() if now is None else now
+    fp = cli_fingerprint()
+    if fp is None:
+        return None
+    reason = catalog_stale(ctx.root, "claude", fp, now)
+    if not reason:
+        return None
+    state_path = _refresh_state_path(ctx.root, "claude")
+    last = _read(state_path)
+    if last.get("fingerprint") == fp and now - float(last.get("attempted_at") or 0) < CATALOG_RETRY:
+        return None
+    _write_json(state_path, {"fingerprint": fp, "attempted_at": now, "reason": reason})
+    ctx.spawn(["toolprune", "refresh-catalog"], "catalog.log")
+    return reason
 
 
 def _prompt_tokens(extra_args, cli=None, timeout=180):

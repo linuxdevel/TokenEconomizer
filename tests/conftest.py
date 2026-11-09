@@ -53,8 +53,10 @@ def _no_model_calls(request, monkeypatch):
     """No test reaches a real agent CLI. With the loop guard on, a stuck-looking turn wakes its
     judge: the plugin's side calls answer nothing here, and a judge job runs inline instead of
     as a detached process. A test that wants a verdict fakes the judge (`stuck_judge`)."""
-    from tokeneconomizer.plugin import judge, sidecall
+    from tokeneconomizer.plugin import judge, sidecall, toolcheck
     monkeypatch.setattr(judge, "spawn_job", judge.run_job)
+    # A session start would otherwise probe the real `claude` for its tool catalog.
+    monkeypatch.setattr(toolcheck, "maybe_refresh_catalog", lambda *a, **k: None)
     if request.node.get_closest_marker("real_sidecalls"):
         return
     for name in ("claude_call", "codex_call", "copilot_call", "grok_call", "hermes_call",

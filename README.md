@@ -132,8 +132,9 @@ claude plugin install tokeneconomizer@tokeneconomizer
 ```
 
 Start `claude`, trust the folder (**Yes, I trust this folder**), and run
-`/tokeneconomizer:status`, allowing its script if asked. Once per machine, and again after Claude
-Code updates, run `/tokeneconomizer:toolprune refresh-catalog`.
+`/tokeneconomizer:status`, allowing its script if asked. A session start records Claude Code's
+tool catalog by itself, in the background, when there is none, when `claude` has changed, or once
+a day; `/tokeneconomizer:toolprune refresh-catalog` records it at once.
 
 **Codex**
 
