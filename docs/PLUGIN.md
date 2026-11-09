@@ -120,7 +120,9 @@ and date it was verified on; §5 says what has not been exercised.
 * An interactive transcript does not record the tool list a session loaded. Without a recorded
   catalog, evidence pruning sees only the tools Claude Code defers (one listing line each) and
   those a session used; `te toolprune refresh-catalog` records the always-loaded set, with no model
-  call.
+  call. A session start runs it detached when the catalog is missing, recorded for another
+  `claude` binary (path, size and mtime), or a day old (MCP servers change the list without
+  changing `claude`); a failed attempt is retried after an hour, or at once after an update.
 * **A call that fails fires `PostToolUseFailure`, not `PostToolUse`** (verified on 2.1.299,
   2026-10-14): `{tool_name, tool_input, tool_use_id, error, is_interrupt, duration_ms}`, where
   `error` is the text the model saw (`"Exit code 2\nls: cannot access ..."`). Until the hook
@@ -826,9 +828,8 @@ open-vocabulary. On a repository you do not trust, leave micro-skills off (the d
   * A turn that ran no recognised verification counts as ended green, so a failed turn without
     one can enter the envelope and loosen the guard for every later turn.
   * Test runs launched from a script are not recognised as verification.
-  * `refresh-catalog` is manual, once per machine and agent; until it runs, evidence pruning
-    sees only the tools sessions used (plus, on Claude Code, the deferred ones). Running it at
-    an agent's first session on a machine would close that gap.
+  * `refresh-catalog` runs by itself only on Claude Code; on the other agents it is manual, once
+    per machine, and until it runs evidence pruning sees only the tools sessions used.
 * Windows beyond Claude Code (Codex, the Copilot CLI and Pi there are untested; Copilot's `-p` is
   not told apart, having no `ps`), Python 3.9, and compressed Codex rollouts (`.zst`).
 * Transcript formats are internal to each agent and change between versions; the readers are

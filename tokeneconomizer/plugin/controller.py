@@ -192,6 +192,12 @@ class LiveController:
             history.maybe_start(self.ctx)
         except Exception:
             self._record_error()
+        if self.cfg.toolprune != "off" and not self.cfg.shadow:
+            try:
+                from . import toolcheck     # only here: its http.server import is not free
+                toolcheck.maybe_refresh_catalog(self.ctx)
+            except Exception:
+                self._record_error()
         # Not while an import of earlier sessions runs: it folds these once it is done.
         fold.spawn_fold(self.ctx, fold.pending_sessions(self.ctx, exclude=(self.sid,)))
         return merge_outputs(*outputs)
